@@ -229,6 +229,8 @@ export async function addUser(user: Omit<User, 'id'>): Promise<string> {
         throw error;
     }
 
+}
+
 
 export async function updateEmployee(id: string, employee: Partial<Omit<Employee, 'id'>>, tenantId: string): Promise<void> {
     if (!db) {
