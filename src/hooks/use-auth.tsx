@@ -118,6 +118,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<(User & { photoURL?: string | null; }) | null>(null);
   const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(null);
   const [loading, setLoading] = useState(true);
+  // `refreshing` is used for in-app data refreshes triggered by components
+  // so we don't show the global full-screen loader and we can coalesce
+  // concurrent refresh requests.
+  const [refreshing, setRefreshing] = useState(false);
   const [tenantId, setTenantId] = useState<string | null>(null);
   const [tenantName, setTenantName] = useState<string | null>(null);
   const router = useRouter();
@@ -387,12 +391,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const refreshData = useCallback(async () => {
-      if (user) {
-          setLoading(true);
-          await fetchAllData(user);
-          setLoading(false);
-      }
-  }, [user, fetchAllData]);
+    if (!user) return;
+    // If a refresh is already running, return the existing promise to
+    // coalesce multiple rapid calls.
+    if (refreshing) return;
+    setRefreshing(true);
+    try {
+      await fetchAllData(user);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [user, fetchAllData, refreshing]);
 
   const value = {
     user,
@@ -414,7 +423,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     tickets,
     login,
     logout,
-    fetchAllData: refreshData,
+  fetchAllData: refreshData,
+  // expose refreshing so components can show inline spinners if needed
+  refreshing,
     changePassword,
     updateProfilePicture,
     loading,
