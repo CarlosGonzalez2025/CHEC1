@@ -47,13 +47,21 @@ const initialNewAdminState = {
 };
 
 export default function TenantManagementPage() {
-    const { user } = useAuth();
+  const { user, refreshTenantInfo, tenantId: currentTenantId } = useAuth();
     const [tenants, setTenants] = useState<Tenant[]>([]);
     const [isFormOpen, setIsFormOpen] = useState(false);
     const [isModuleFormOpen, setIsModuleFormOpen] = useState(false);
     const [selectedTenant, setSelectedTenant] = useState<Tenant | null>(null);
     const [newTenantData, setNewTenantData] = useState(initialNewTenantState);
   const [logoFile, setLogoFile] = useState<File | null>(null);
+  const [logoPreviewUrl, setLogoPreviewUrl] = useState<string | null>(null);
+    
+  // Clean up preview URL to avoid memory leaks
+  useEffect(() => {
+    return () => {
+      if (logoPreviewUrl) URL.revokeObjectURL(logoPreviewUrl);
+    }
+  }, [logoPreviewUrl]);
     const [newAdminData, setNewAdminData] = useState(initialNewAdminState);
     const [tenantModules, setTenantModules] = useState<string[]>([]);
     const { toast } = useToast();
@@ -71,7 +79,7 @@ export default function TenantManagementPage() {
     const handleSave = async (e: React.FormEvent) => {
         e.preventDefault();
         try {
-      if (selectedTenant) {
+  if (selectedTenant) {
         // Update existing tenant
         const updateData: Partial<Omit<Tenant, 'id' | 'createdAt'>> = {
           name: newTenantData.name,
@@ -90,6 +98,10 @@ export default function TenantManagementPage() {
           }
         }
         toast({ title: 'Empresa Actualizada', description: `La empresa '${newTenantData.name}' ha sido actualizada.` });
+        // If the updated tenant is the one the current session belongs to, refresh tenant metadata
+        if (currentTenantId && selectedTenant.id === currentTenantId) {
+          try { await refreshTenantInfo(); } catch (e) { /* ignore */ }
+        }
       } else {
         // Create flow
         // Step 1: Create the new tenant to get an ID
@@ -120,6 +132,10 @@ export default function TenantManagementPage() {
           }
         }
         toast({ title: "Usuario Administrador Creado", description: `El usuario ${newAdminData.email} ha sido creado para ${newTenantData.name}.` });
+        // If we created a tenant and the current user belongs to it (unlikely) refresh
+        if (currentTenantId && newTenantId === currentTenantId) {
+          try { await refreshTenantInfo(); } catch (e) { /* ignore */ }
+        }
       }
 
             // Step 3: Reset form and refresh list
@@ -234,10 +250,40 @@ export default function TenantManagementPage() {
              <Input id="tenant-nit" value={(newTenantData as any).nit || ''} onChange={(e) => setNewTenantData({...newTenantData, nit: e.target.value})} />
               </div>
                         </div>
-              <div className="space-y-2 mt-2">
-                <Label htmlFor="tenant-logo">Logo de la Empresa (Opcional)</Label>
-                <input id="tenant-logo" type="file" accept="image/*" onChange={(e) => setLogoFile(e.target.files?.[0] || null)} />
-              </div>
+        <div className="space-y-2 mt-2">
+        <Label htmlFor="tenant-logo">Logo de la Empresa (Opcional)</Label>
+        <input id="tenant-logo" type="file" accept="image/*" onChange={(e) => {
+          const file = e.target.files?.[0] || null;
+          if (!file) {
+            setLogoFile(null);
+            setLogoPreviewUrl(null);
+            return;
+          }
+          // Validate type
+          if (!file.type.startsWith('image/')) {
+            toast({ title: 'Archivo inválido', description: 'Por favor selecciona una imagen.', variant: 'destructive' });
+            e.currentTarget.value = '';
+            return;
+          }
+          // Validate size <= 2MB
+          const maxSize = 2 * 1024 * 1024;
+          if (file.size > maxSize) {
+            toast({ title: 'Archivo muy grande', description: 'El logo debe ser menor a 2MB.', variant: 'destructive' });
+            e.currentTarget.value = '';
+            return;
+          }
+          setLogoFile(file);
+          const url = URL.createObjectURL(file);
+          setLogoPreviewUrl(url);
+        }} />
+        {logoPreviewUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={logoPreviewUrl} alt="Preview Logo" className="mt-2 w-40 h-20 object-contain border rounded-md bg-white p-1" />
+        ) : newTenantData.logoURL ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={newTenantData.logoURL as string} alt="Current Logo" className="mt-2 w-40 h-20 object-contain border rounded-md bg-white p-1" />
+        ) : null}
+        </div>
                     </div>
                      <div className="p-4 border rounded-md">
                         <h3 className="text-lg font-medium mb-2">Datos del Administrador</h3>

@@ -74,6 +74,8 @@ interface AuthContextType {
   tenantId: string | null;
   tenantName: string | null;
   tenantLogo?: string | null;
+  // Force re-fetch of the current tenant metadata (logo, name) from the backend
+  refreshTenantInfo: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -409,6 +411,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [user, fetchAllData, refreshing]);
 
+  // Re-fetch tenant metadata (logo, name) for the current user's tenant
+  const refreshTenantInfo = useCallback(async () => {
+    if (!user) return;
+    try {
+      if (user.role === 'SuperAdmin') {
+        setTenantLogo(null);
+        setTenantName('Global');
+        setTenantId(null);
+        return;
+      }
+      if (user.tenantId) {
+        const tenant = await getTenantById(user.tenantId);
+        if (tenant) {
+          setTenantLogo(tenant.logoURL || null);
+          setTenantName(tenant.name || null);
+          setTenantId(user.tenantId);
+        }
+      }
+    } catch (err) {
+      console.error('Error refreshing tenant info', err);
+    }
+  }, [user]);
+
   const value = {
     user,
     firebaseUser,
@@ -437,6 +462,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     loading,
     tenantId,
     tenantName,
+    tenantLogo,
+    refreshTenantInfo,
   };
 
   return (
