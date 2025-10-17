@@ -6,6 +6,8 @@ import { createUserWithEmailAndPassword, signInWithEmailAndPassword as firebaseS
 import type { Emo, PveData, Absence, ATTracking, MedicalRecommendation, ActivitySchedule, User, Tenant, VitalEvent, GerenciaReport, SstReport, RhReport, CclReport, AtCaracterizacion, CostCenter, Ticket, TicketComment } from './types';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { v4 as uuidv4 } from 'uuid';
+import { initializeApp, deleteApp } from 'firebase/app';
+import { firebaseConfig } from '../firebase/config';
 import { sendEmailAction } from './actions';
 import { errorEmitter } from '@/firebase/error-emitter';
 import { FirestorePermissionError } from '@/firebase/errors';
@@ -180,14 +182,16 @@ export async function addUser(user: Omit<User, 'id'>): Promise<string> {
         throw new Error("Admin user is not properly signed in.");
     }
 
-    // Create a secondary auth instance for creating new users
-    const tempAuth = getAuth();
-    
+    // Create a temporary Firebase app + auth instance to isolate auth state
+    const tempAppName = `temp-${uuidv4()}`;
+    const tempApp = initializeApp(firebaseConfig, tempAppName);
+    const tempAuth = getAuth(tempApp);
+
     try {
         // Create the new user with the temporary auth instance
         const { user: newUser } = await createUserWithEmailAndPassword(tempAuth, user.email, user.password!);
         const newUserId = newUser.uid;
-        
+
         const userToSave: Omit<User, 'id' | 'password'> = {
             name: user.name,
             email: user.email,
@@ -199,13 +203,29 @@ export async function addUser(user: Omit<User, 'id'>): Promise<string> {
             photoURL: null,
         };
         await setDoc(doc(db, "users", newUserId), userToSave);
-        
-        // Sign out from the temporary auth instance
-        await signOut(tempAuth);
-        
+
+        // Sign out from the temporary auth instance and delete the temporary app
+        try {
+            await signOut(tempAuth);
+        } catch (e) {
+            // ignore
+        }
+        try {
+            await deleteApp(tempApp);
+        } catch (e) {
+            // ignore
+        }
+
         return newUserId;
     } catch (error) {
         console.error("Error during new user creation:", error);
+        // Attempt cleanup
+        try {
+            await signOut(getAuth(tempApp));
+        } catch (e) {}
+        try {
+            await deleteApp(tempApp);
+        } catch (e) {}
         throw error;
     }
 
