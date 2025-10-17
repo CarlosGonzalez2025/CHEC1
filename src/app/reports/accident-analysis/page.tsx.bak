@@ -1,0 +1,302 @@
+// src/app/reports/accident-analysis/page.tsx
+'use client';
+import { useEffect, useMemo, useState, useRef } from 'react';
+import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis, PieChart, Pie, Cell } from 'recharts';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import AppLayout from '@/components/layout/app-layout';
+import { getATTrackings, getEmployees, payrollDescriptions } from '@/lib/data';
+import type { ATTracking, Employee } from '@/lib/data';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { getYear, getMonth } from 'date-fns';
+import { ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart';
+import { Button } from '@/components/ui/button';
+import { FileDown, Loader2 } from 'lucide-react';
+import jsPDF from 'jspdf';
+import html2canvas from 'html2canvas';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+
+const groupAndCount = (data: any[], key: string) => {
+    return data.reduce((acc, item) => {
+        const value = item[key];
+        if (value) {
+            acc[value] = (acc[value] || 0) + 1;
+        }
+        return acc;
+    }, {});
+};
+
+const BodyMapChart = ({ data }: { data: { name: string, total: number }[] }) => {
+    const bodyPartPositions: { [key: string]: { top: string; left: string } } = {
+        "CABEZA": { top: '5%', left: '48%' },
+        "OJO IZQUIERDO": { top: '8%', left: '55%' },
+        "OJO DERECHO": { top: '8%', left: '41%' },
+        "CUELLO": { top: '15%', left: '48%' },
+        "TRONCO": { top: '30%', left: '48%' },
+        "ESPALDA": { top: '30%', left: '40%' },
+        "HOMBRO DERECHO": { top: '20%', left: '35%' },
+        "HOMBRO IZQUIERDO": { top: '20%', left: '61%' },
+        "BRAZO DERECHO": { top: '30%', left: '28%' },
+        "BRAZO IZQUIERDO": { top: '30%', left: '68%' },
+        "CODO DERECHO": { top: '38%', left: '25%' },
+        "CODO IZQUIERDO": { top: '38%', left: '71%' },
+        "MANO DERECHA": { top: '48%', left: '20%' },
+        "MANO IZQUIERDA": { top: '48%', left: '76%' },
+        "CADERA DERECHA": { top: '45%', left: '40%' },
+        "CADERA IZQUIERDA": { top: '45%', left: '56%' },
+        "PIERNA DERECHA": { top: '60%', left: '42%' },
+        "PIERNA IZQUIERDA": { top: '60%', left: '54%' },
+        "RODILLA DERECHA": { top: '70%', left: '41%' },
+        "RODILLA IZQUIERDA": { top: '70%', left: '55%' },
+        "PIE DERECHO": { top: '88%', left: '40%' },
+        "PIE IZQUIERDO": { top: '88%', left: '56%' },
+        "UBICACIONES MULTIPLES": { top: '50%', left: '80%' },
+        "LESIONES GENERALES": { top: '60%', left: '80%' },
+    };
+
+    const getPartCount = (partName: string) => {
+        const part = data.find(p => p.name.toUpperCase() === partName);
+        return part ? part.total : 0;
+    };
+    
+    return (
+        <div className="relative w-full max-w-xs mx-auto aspect-[9/16]">
+            <svg viewBox="0 0 150 270" className="w-full h-full" fill="hsl(var(--muted-foreground))" opacity="0.1">
+                 <circle cx="75" cy="20" r="15"/>
+                <path d="M75,35 L75,90 L95,90 L95,160 L80,160 L80,250 L90,265 L60,265 L50,250 L50,160 L35,160 L35,90 L55,90 L75,90 z" transform="translate(10, 0) scale(0.9)"/>
+                 <rect x="55" y="35" width="40" height="60" rx="5"/>
+                <path d="M 95 95 L 125 150 L 115 155 L 85 100 Z" />
+                <path d="M 55 95 L 25 150 L 35 155 L 65 100 Z" />
+                 <rect x="65" y="155" width="20" height="90"/>
+                 <rect x="35" y="155" width="20" height="90"/>
+                 <path d="M 85 245 L 95 265 L 75 265 Z" />
+                 <path d="M 65 245 L 55 265 L 75 265 Z" />
+            </svg>
+
+            {Object.entries(bodyPartPositions).map(([part, pos]) => {
+                const count = getPartCount(part);
+                if (count > 0) {
+                    return (
+                        <div key={part} className="absolute flex items-center justify-center w-8 h-8 rounded-full bg-primary text-primary-foreground text-sm font-bold shadow-lg"
+                             style={{ top: pos.top, left: pos.left, transform: 'translate(-50%, -50%)' }}>
+                            {count}
+                             <div className="absolute -top-5 left-1/2 -translate-x-1/2 px-2 py-1 bg-background text-foreground text-xs rounded shadow-md whitespace-nowrap">
+                                {part.charAt(0) + part.slice(1).toLowerCase()}
+                            </div>
+                        </div>
+                    );
+                }
+                return null;
+            })}
+             {data.length === 0 && (
+                <div className="absolute inset-0 flex items-center justify-center">
+                    <p className="text-center text-muted-foreground bg-background/80 p-4 rounded-lg">No hay datos de lesiones para mostrar con los filtros actuales.</p>
+                </div>
+            )}
+        </div>
+    );
+};
+
+
+export default function AccidentAnalysisPage() {
+    const [trackings, setTrackings] = useState<ATTracking[]>([]);
+    const [employees, setEmployees] = useState<Employee[]>([]);
+    const [filters, setFilters] = useState({
+        costCenter: 'Todos',
+        year: 'Todos los años',
+    });
+    const [isExportingPdf, setIsExportingPdf] = useState(false);
+    const reportRef = useRef<HTMLDivElement>(null);
+    const [loading, setLoading] = useState(true);
+
+    useEffect(() => {
+        setLoading(true);
+        Promise.all([getATTrackings(), getEmployees()]).then(([trackingData, employeeData]) => {
+            setTrackings(trackingData);
+            setEmployees(employeeData);
+            setLoading(false);
+        });
+    }, []);
+
+    const availableYears = useMemo(() => {
+        const years = new Set(trackings.map(t => t.fechaSiniestro ? getYear(t.fechaSiniestro) : null).filter(Boolean));
+        return Array.from(years).sort((a, b) => b! - a!);
+    }, [trackings]);
+
+    const filteredData = useMemo(() => {
+        const filteredTrackings = trackings.filter(t => {
+            const yearMatch = filters.year === 'Todos los años' || (t.fechaSiniestro && getYear(t.fechaSiniestro) === parseInt(filters.year, 10));
+            const costCenterMatch = filters.costCenter === 'Todos' || t.centroDeCostos === filters.costCenter;
+            return yearMatch && costCenterMatch;
+        });
+
+        const filteredEmployeeCount = employees.filter(e => {
+             const costCenterMatch = filters.costCenter === 'Todos' || e.payrollDescription === filters.costCenter;
+             // We can't filter employees by year of hire as they might have been hired before but worked in the filtered year.
+             // For simplicity, we use the total number of employees in that cost center. A more accurate approach would need monthly employee counts.
+             return costCenterMatch && e.contractStatus === 'Activo';
+        }).length;
+
+        return { trackings: filteredTrackings, employeeCount: filteredEmployeeCount };
+    }, [trackings, employees, filters]);
+
+    const accidentIndicators = useMemo(() => {
+        const { trackings: filtered, employeeCount } = filteredData;
+        const totalAccidents = filtered.length;
+        if (employeeCount === 0 || totalAccidents === 0) {
+            return { frequency: 0, severity: 0, mortalProportion: 0, totalAccidents: 0 };
+        }
+
+        const totalIncapacityDays = filtered.reduce((acc, t) => acc + (t.diasIncapacidad || 0), 0);
+        // "días cargados" is not defined in our data, so we'll omit it for now.
+        const frequency = (totalAccidents / employeeCount) * 100;
+        const severity = (totalIncapacityDays / employeeCount) * 100;
+
+        const mortalAccidents = filtered.filter(t => t.clasificacionEvento === 'Mortal').length;
+        const mortalProportion = (mortalAccidents / totalAccidents) * 100;
+        
+        return {
+            frequency: parseFloat(frequency.toFixed(2)),
+            severity: parseFloat(severity.toFixed(2)),
+            mortalProportion: parseFloat(mortalProportion.toFixed(2)),
+            totalAccidents
+        };
+
+    }, [filteredData]);
+
+    const trendData = useMemo(() => {
+        const monthNames = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
+        const yearToFilter = filters.year === 'Todos los años' ? new Date().getFullYear() : parseInt(filters.year, 10);
+        const data = monthNames.map(name => ({ name, Accidentes: 0 }));
+
+        filteredData.trackings.forEach(t => {
+            if (t.fechaSiniestro && getYear(t.fechaSiniestro) === yearToFilter) {
+                data[getMonth(t.fechaSiniestro)].Accidentes++;
+            }
+        });
+        return data;
+    }, [filteredData, filters.year]);
+
+    const byClassificationData = useMemo(() => {
+        const counts = groupAndCount(filteredData.trackings, 'clasificacionEvento');
+        const colors = { Leve: '#3b82f6', Grave: '#f97316', Mortal: '#ef4444', Moderado: '#a855f7', NA: '#9ca3af' };
+        return Object.entries(counts).map(([name, value]) => ({ name, value: value as number, fill: colors[name as keyof typeof colors] || '#9ca3af' }));
+    }, [filteredData]);
+
+    const byBodyPartData = useMemo(() => {
+        const counts = groupAndCount(filteredData.trackings, 'parteCuerpoAfectada');
+        return Object.entries(counts).map(([name, total]) => ({ name, total: total as number })).sort((a,b) => b.total - a.total);
+    }, [filteredData]);
+
+    const handleExportPDF = async () => {
+        if (!reportRef.current) return;
+        setIsExportingPdf(true);
+        const canvas = await html2canvas(reportRef.current, { scale: 2, useCORS: true, backgroundColor: null });
+        const imgData = canvas.toDataURL('image/png');
+        const pdf = new jsPDF({ orientation: 'portrait', unit: 'px', format: [canvas.width, canvas.height] });
+        pdf.addImage(imgData, 'PNG', 0, 0, canvas.width, canvas.height);
+        pdf.save('analisis_accidentalidad.pdf');
+        setIsExportingPdf(false);
+    };
+
+    if (loading) {
+        return (
+            <AppLayout pageTitle="Análisis de Accidentalidad">
+                <div className="flex h-[80vh] items-center justify-center"><Loader2 className="h-12 w-12 animate-spin text-primary" /></div>
+            </AppLayout>
+        );
+    }
+    
+    return (
+        <AppLayout pageTitle="Análisis de Accidentalidad">
+             <div className="space-y-6" ref={reportRef}>
+                 <Card>
+                    <CardHeader>
+                        <CardTitle>Indicadores de Accidentalidad</CardTitle>
+                        <CardDescription>Filtre por año y centro de costo para ver los indicadores.</CardDescription>
+                    </CardHeader>
+                    <CardContent className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        <div className="w-full">
+                            <label className="text-sm font-medium">Centro de Costo</label>
+                            <Select onValueChange={value => setFilters(f => ({ ...f, costCenter: value }))} defaultValue="Todos">
+                                <SelectTrigger><SelectValue /></SelectTrigger>
+                                <SelectContent><SelectItem value="Todos">Todos</SelectItem>{payrollDescriptions.map(pd => <SelectItem key={pd} value={pd}>{pd}</SelectItem>)}</SelectContent>
+                            </Select>
+                        </div>
+                         <div className="w-full">
+                            <label className="text-sm font-medium">Año</label>
+                            <Select onValueChange={value => setFilters(f => ({ ...f, year: value }))} defaultValue="Todos los años">
+                                <SelectTrigger><SelectValue /></SelectTrigger>
+                                <SelectContent><SelectItem value="Todos los años">Todos los años</SelectItem>{availableYears.map(year => <SelectItem key={year} value={String(year)}>{year}</SelectItem>)}</SelectContent>
+                            </Select>
+                        </div>
+                        <div className="flex items-end">
+                             <Button onClick={handleExportPDF} variant="outline" className="gap-1 w-full" disabled={isExportingPdf}>
+                                {isExportingPdf ? <Loader2 className="animate-spin"/> : <FileDown className="h-4 w-4" />}
+                                Exportar a PDF
+                            </Button>
+                        </div>
+                    </CardContent>
+                 </Card>
+                 
+                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <Card>
+                        <CardHeader><CardTitle className="text-sm font-medium">N° de Accidentes</CardTitle></CardHeader>
+                        <CardContent><p className="text-4xl font-bold">{accidentIndicators.totalAccidents}</p></CardContent>
+                    </Card>
+                     <Card>
+                        <CardHeader><CardTitle className="text-sm font-medium">Índice de Frecuencia</CardTitle></CardHeader>
+                        <CardContent><p className="text-4xl font-bold">{accidentIndicators.frequency}</p><p className="text-xs text-muted-foreground">Accidentes por cada 100 trabajadores.</p></CardContent>
+                    </Card>
+                     <Card>
+                        <CardHeader><CardTitle className="text-sm font-medium">Índice de Severidad</CardTitle></CardHeader>
+                        <CardContent><p className="text-4xl font-bold">{accidentIndicators.severity}</p><p className="text-xs text-muted-foreground">Días perdidos por cada 100 trabajadores.</p></CardContent>
+                    </Card>
+                     <Card>
+                        <CardHeader><CardTitle className="text-sm font-medium">Proporción Mortalidad</CardTitle></CardHeader>
+                        <CardContent><p className="text-4xl font-bold">{accidentIndicators.mortalProportion}%</p><p className="text-xs text-muted-foreground">Del total de accidentes.</p></CardContent>
+                    </Card>
+                 </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <Card>
+                        <CardHeader><CardTitle>Tendencia de Accidentes ({filters.year})</CardTitle></CardHeader>
+                        <CardContent>
+                            <ResponsiveContainer width="100%" height={300}>
+                                <BarChart data={trendData}>
+                                    <CartesianGrid strokeDasharray="3 3" />
+                                    <XAxis dataKey="name" />
+                                    <YAxis allowDecimals={false}/>
+                                    <Tooltip />
+                                    <Bar dataKey="Accidentes" fill="#3b82f6" name="N° de Accidentes" />
+                                </BarChart>
+                            </ResponsiveContainer>
+                        </CardContent>
+                    </Card>
+                     <Card>
+                        <CardHeader><CardTitle>Accidentes por Clasificación</CardTitle></CardHeader>
+                        <CardContent>
+                            <ResponsiveContainer width="100%" height={300}>
+                                <ChartContainer config={{}} className="mx-auto aspect-square h-full">
+                                    <PieChart>
+                                        <ChartTooltip content={<ChartTooltipContent nameKey="name" hideLabel />} />
+                                        <Pie data={byClassificationData} dataKey="value" nameKey="name" innerRadius={60} label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`} >
+                                             {byClassificationData.map((entry) => <Cell key={entry.name} fill={entry.fill} />)}
+                                        </Pie>
+                                        <Legend />
+                                    </PieChart>
+                                </ChartContainer>
+                            </ResponsiveContainer>
+                        </CardContent>
+                    </Card>
+                </div>
+                
+                 <Card>
+                    <CardHeader><CardTitle>Distribución de Accidentes por Parte del Cuerpo</CardTitle></CardHeader>
+                    <CardContent className="flex justify-center">
+                        <BodyMapChart data={byBodyPartData} />
+                    </CardContent>
+                 </Card>
+             </div>
+        </AppLayout>
+    );
+}

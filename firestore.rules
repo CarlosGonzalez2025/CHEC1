@@ -1,0 +1,41 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Helper function to check if a user is a SuperAdmin
+    function isSuperAdmin(userId) {
+      return get(/databases/$(database)/documents/users/$(userId)).data.role == 'SuperAdmin';
+    }
+
+    // Rules for the users collection
+    match /users/{userId} {
+      // Only the user themselves or a SuperAdmin can read the user's data.
+      allow read: if request.auth.uid == userId || isSuperAdmin(request.auth.uid);
+      // Only the user themselves or a SuperAdmin can update their own profile.
+      allow update: if request.auth.uid == userId || isSuperAdmin(request.auth.uid);
+      // Allow creation for new user sign-ups
+      allow create: if request.auth != null;
+    }
+
+    // Rules for all other collections, restricted by tenantId
+    match /{collection}/{docId} {
+      allow read, write: if request.auth != null && 
+                             (isSuperAdmin(request.auth.uid) || 
+                              get(/databases/$(database)/documents/users/$(request.auth.uid)).data.tenantId == resource.data.tenantId);
+    }
+    
+    match /tickets/{ticketId} {
+      // Read: A user can read their own tickets. A SuperAdmin can read all tickets.
+      allow read: if isSuperAdmin(request.auth.uid) || resource.data.userId == request.auth.uid;
+      
+      // Create: Any authenticated user can create a ticket for themselves.
+      allow create: if request.auth != null
+                    && request.resource.data.userId == request.auth.uid
+                    && request.resource.data.status == 'Abierto';
+
+      // Update: A SuperAdmin can change status/priority. Any user can add a comment.
+      allow update: if (isSuperAdmin(request.auth.uid) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'priority']))
+                    || (request.auth != null && request.resource.data.comments.size() == resource.data.comments.size() + 1);
+    }
+  }
+}
