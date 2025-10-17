@@ -22,7 +22,7 @@ type AppLayoutProps = {
 };
 
 const AppLayoutClient = ({ children, pageTitle }: AppLayoutProps) => {
-  const { tenantName, user } = useAuth();
+  const { tenantName, user, tenantLogo } = useAuth();
   
   let headerTitle = "NOVA SST";
   if (user?.role === 'SuperAdmin') {
@@ -38,7 +38,13 @@ const AppLayoutClient = ({ children, pageTitle }: AppLayoutProps) => {
       <Sidebar>
         <SidebarHeader>
           <Link href="/dashboard" className="flex items-center gap-2">
-            <Image src="https://i.postimg.cc/dtrs3sSP/logo2-copia.png" alt="CHEC Logo" width={32} height={32} />
+            {tenantLogo ? (
+              // tenant-specific logo
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={tenantLogo} alt="Tenant Logo" width={32} height={32} className="rounded" />
+            ) : (
+              <Image src="https://i.postimg.cc/dtrs3sSP/logo2-copia.png" alt="CHEC Logo" width={32} height={32} />
+            )}
             <span className="text-lg font-bold font-headline">{headerTitle}</span>
           </Link>
         </SidebarHeader>

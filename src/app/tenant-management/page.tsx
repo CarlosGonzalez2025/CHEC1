@@ -11,6 +11,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { MoreHorizontal, PlusCircle, SlidersHorizontal } from 'lucide-react';
 import { Tenant, getTenants, addTenant, User, addUser, updateTenant, navItems } from '@/lib/data';
+import { uploadFile } from '@/lib/data';
 import AppLayout from '@/components/layout/app-layout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import {
@@ -35,6 +36,7 @@ const initialNewTenantState: Omit<Tenant, 'id' | 'createdAt'> = {
   name: '',
   status: 'Active',
   accessibleModules: ['dashboard', 'employees', 'absence-tracking', 'osteomuscular'], // ✅ Agregado 'osteomuscular'
+  logoURL: null,
 };
 
 const initialNewAdminState = {
@@ -50,6 +52,7 @@ export default function TenantManagementPage() {
     const [isModuleFormOpen, setIsModuleFormOpen] = useState(false);
     const [selectedTenant, setSelectedTenant] = useState<Tenant | null>(null);
     const [newTenantData, setNewTenantData] = useState(initialNewTenantState);
+  const [logoFile, setLogoFile] = useState<File | null>(null);
     const [newAdminData, setNewAdminData] = useState(initialNewAdminState);
     const [tenantModules, setTenantModules] = useState<string[]>([]);
     const { toast } = useToast();
@@ -84,6 +87,16 @@ export default function TenantManagementPage() {
                 photoURL: null,
             };
             await addUser(adminUserData);
+      // If a logo file was provided, upload it and update tenant
+      if (logoFile) {
+        try {
+          const logoURL = await uploadFile(logoFile, `tenant-logos/${newTenantId}`);
+          await updateTenant(newTenantId, { logoURL });
+        } catch (e) {
+          console.error('Error uploading tenant logo', e);
+          // non-fatal: tenant was created, admin created
+        }
+      }
             toast({ title: "Usuario Administrador Creado", description: `El usuario ${newAdminData.email} ha sido creado para ${newTenantData.name}.` });
 
             // Step 3: Reset form and refresh list
@@ -193,6 +206,10 @@ export default function TenantManagementPage() {
                              <Label htmlFor="tenant-name">Nombre de la Empresa</Label>
                              <Input id="tenant-name" value={newTenantData.name} onChange={(e) => setNewTenantData({...newTenantData, name: e.target.value})} />
                         </div>
+              <div className="space-y-2 mt-2">
+                <Label htmlFor="tenant-logo">Logo de la Empresa (Opcional)</Label>
+                <input id="tenant-logo" type="file" accept="image/*" onChange={(e) => setLogoFile(e.target.files?.[0] || null)} />
+              </div>
                     </div>
                      <div className="p-4 border rounded-md">
                         <h3 className="text-lg font-medium mb-2">Datos del Administrador</h3>

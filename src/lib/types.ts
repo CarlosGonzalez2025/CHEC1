@@ -270,6 +270,7 @@ export type Tenant = {
   createdAt: Date;
   status: 'Active' | 'Inactive';
   accessibleModules: string[];
+  logoURL?: string | null; // Optional tenant logo URL stored in Storage
 };
 
 

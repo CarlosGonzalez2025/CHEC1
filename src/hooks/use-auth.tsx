@@ -73,6 +73,7 @@ interface AuthContextType {
   loading: boolean;
   tenantId: string | null;
   tenantName: string | null;
+  tenantLogo?: string | null;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -124,6 +125,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [refreshing, setRefreshing] = useState(false);
   const [tenantId, setTenantId] = useState<string | null>(null);
   const [tenantName, setTenantName] = useState<string | null>(null);
+  const [tenantLogo, setTenantLogo] = useState<string | null>(null);
   const router = useRouter();
   const pathname = usePathname();
 
@@ -260,6 +262,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
     setTenantId(null);
     setTenantName(null);
+    setTenantLogo(null);
     setEmployees([]);
     setAbsences([]);
     setMedicalFollowUps([]);
@@ -299,6 +302,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (userProfile.role === 'SuperAdmin') {
             currentTenantId = null;
             currentTenantName = 'Global';
+      // SuperAdmin has no tenant logo
+      setTenantLogo(null);
             const allNavItems = navItems.map(item => item.id);
             finalModules = [...new Set([...baseModules, ...allNavItems])];
         } else if (userProfile.tenantId) {
@@ -311,6 +316,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             }
             currentTenantId = userProfile.tenantId;
             currentTenantName = tenant.name;
+      setTenantLogo(tenant.logoURL || null);
             const tenantModules = new Set(tenant.accessibleModules || []);
             const userModules = new Set(userProfile.accessibleModules || []);
             finalModules = Array.from(new Set([...baseModules, ...tenantModules, ...userModules]));

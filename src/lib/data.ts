@@ -688,6 +688,7 @@ export async function getTenants(): Promise<Tenant[]> {
             status: data.status,
             createdAt: data.createdAt.toDate(),
             accessibleModules: data.accessibleModules || [],
+            logoURL: data.logoURL || null,
         } as Tenant;
     });
 }
@@ -704,6 +705,7 @@ export async function getTenantById(tenantId: string): Promise<Tenant | null> {
             status: data.status,
             createdAt: data.createdAt.toDate(),
             accessibleModules: data.accessibleModules || [],
+            logoURL: data.logoURL || null,
         } as Tenant;
     }
     return null;
@@ -714,6 +716,7 @@ export async function addTenant(tenant: Omit<Tenant, 'id' | 'createdAt'>): Promi
     if (!db) throw new Error("Firebase is not initialized.");
     const docRef = await addDoc(collection(db, 'tenants'), {
         ...tenant,
+        logoURL: tenant.logoURL || null,
         createdAt: Timestamp.now(),
     });
     return docRef.id;
