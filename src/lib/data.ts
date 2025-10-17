@@ -2,7 +2,7 @@
 
 import { collection, getDocs, addDoc, Timestamp, doc, updateDoc, getDoc, setDoc, query, where, deleteDoc, arrayUnion } from 'firebase/firestore';
 import { db, auth, storage } from './firebase';
-import { createUserWithEmailAndPassword, signInWithEmailAndPassword as firebaseSignIn, signOut, signInWithCredential, reauthenticateWithCredential, EmailAuthProvider, updatePassword as firebaseUpdatePassword } from 'firebase/auth';
+import { createUserWithEmailAndPassword, signInWithEmailAndPassword as firebaseSignIn, signOut, signInWithCredential, reauthenticateWithCredential, EmailAuthProvider, updatePassword as firebaseUpdatePassword, getAuth } from 'firebase/auth';
 import type { Emo, PveData, Absence, ATTracking, MedicalRecommendation, ActivitySchedule, User, Tenant, VitalEvent, GerenciaReport, SstReport, RhReport, CclReport, AtCaracterizacion, CostCenter, Ticket, TicketComment } from './types';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { v4 as uuidv4 } from 'uuid';
@@ -175,16 +175,17 @@ export async function addUser(user: Omit<User, 'id'>): Promise<string> {
     if (!db || !auth) {
         throw new Error("Firebase is not initialized.");
     }
-    const superAdmin = auth.currentUser;
-    if (!superAdmin || !superAdmin.email) {
-        throw new Error("SuperAdmin user is not properly signed in.");
+    const adminUser = auth.currentUser;
+    if (!adminUser || !adminUser.email) {
+        throw new Error("Admin user is not properly signed in.");
     }
 
-    const superAdminEmail = superAdmin.email;
-    const superAdminUid = superAdmin.uid;
-
+    // Create a secondary auth instance for creating new users
+    const tempAuth = getAuth();
+    
     try {
-        const { user: newUser } = await createUserWithEmailAndPassword(auth, user.email, user.password!);
+        // Create the new user with the temporary auth instance
+        const { user: newUser } = await createUserWithEmailAndPassword(tempAuth, user.email, user.password!);
         const newUserId = newUser.uid;
         
         const userToSave: Omit<User, 'id' | 'password'> = {
@@ -199,31 +200,14 @@ export async function addUser(user: Omit<User, 'id'>): Promise<string> {
         };
         await setDoc(doc(db, "users", newUserId), userToSave);
         
-        // After creating the new user, Firebase automatically signs in as that new user.
-        // We need to sign out the new user and sign the SuperAdmin back in.
-        // This is a simplified client-side approach. A robust solution would use Firebase Admin SDK on a server.
-        
-        // 1. Sign out the newly created user
-        await signOut(auth);
-
-        // 2. We can't get the SuperAdmin's password here, so we cannot re-sign them in automatically.
-        // The onAuthStateChanged listener in useAuth will detect the sign-out and redirect to the login page.
-        // This is the safest client-side behavior to avoid storing sensitive credentials.
-        // The SuperAdmin will need to log in again.
+        // Sign out from the temporary auth instance
+        await signOut(tempAuth);
         
         return newUserId;
     } catch (error) {
         console.error("Error during new user creation:", error);
-        
-        // Attempt to re-verify the current user is the SuperAdmin. If this fails, it means the session changed.
-        // If it succeeds, the SuperAdmin is still logged in, and we can just re-throw the error.
-        if (auth.currentUser?.uid !== superAdminUid) {
-            console.warn("Session changed during user creation. Forcing sign-out.");
-            await signOut(auth);
-        }
-        throw error; // Re-throw the original error
+        throw error;
     }
-}
 
 
 export async function updateEmployee(id: string, employee: Partial<Omit<Employee, 'id'>>, tenantId: string): Promise<void> {
