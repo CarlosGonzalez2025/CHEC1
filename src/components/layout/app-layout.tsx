@@ -51,9 +51,21 @@ const AppLayoutClient = ({ children, pageTitle }: AppLayoutProps) => {
         <SidebarContent>
           <Nav />
         </SidebarContent>
-        <SidebarFooter className='flex flex-col gap-1'>
+        <SidebarFooter className='flex flex-col gap-1 items-start'>
           <SidebarSeparator />
-           <p className="text-xs text-muted-foreground text-center w-full py-2">Powered by DateNova</p>
+          <div className="w-full flex items-center justify-between py-2">
+            {/* Left: tenant logo square */}
+            <div className="flex items-center">
+              {tenantLogo ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={tenantLogo} alt="Tenant Logo" className="w-24 h-12 object-contain rounded-md bg-white p-1 shadow" />
+              ) : (
+                <div className="w-24 h-12 bg-gray-100 rounded-md" />
+              )}
+            </div>
+            {/* Right: small caption */}
+            <p className="text-xs text-muted-foreground">Powered by DateNova</p>
+          </div>
         </SidebarFooter>
       </Sidebar>
       <SidebarInset>
