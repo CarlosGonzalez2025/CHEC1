@@ -37,6 +37,7 @@ const initialNewTenantState: Omit<Tenant, 'id' | 'createdAt'> = {
   status: 'Active',
   accessibleModules: ['dashboard', 'employees', 'absence-tracking', 'osteomuscular'], // ✅ Agregado 'osteomuscular'
   logoURL: null,
+  nit: null,
 };
 
 const initialNewAdminState = {
@@ -70,37 +71,60 @@ export default function TenantManagementPage() {
     const handleSave = async (e: React.FormEvent) => {
         e.preventDefault();
         try {
-            // Step 1: Create the new tenant to get an ID
-            const newTenantId = await addTenant(newTenantData);
-            toast({ title: "Empresa Creada", description: `La empresa '${newTenantData.name}' ha sido registrada.` });
-
-            // Step 2: Create the admin user for that new tenant
-            const adminUserData: Omit<User, 'id'> = {
-                name: newAdminData.name,
-                email: newAdminData.email,
-                password: newAdminData.password,
-                role: 'Admin',
-                status: 'Active',
-                tenantId: newTenantId,
-                accessibleModules: [], // Admin inherits modules from tenant, so this can be empty
-                costCenters: [],
-                photoURL: null,
-            };
-            await addUser(adminUserData);
-      // If a logo file was provided, upload it and update tenant
-      if (logoFile) {
-        try {
-          const logoURL = await uploadFile(logoFile, `tenant-logos/${newTenantId}`);
-          await updateTenant(newTenantId, { logoURL });
-        } catch (e) {
-          console.error('Error uploading tenant logo', e);
-          // non-fatal: tenant was created, admin created
+      if (selectedTenant) {
+        // Update existing tenant
+        const updateData: Partial<Omit<Tenant, 'id' | 'createdAt'>> = {
+          name: newTenantData.name,
+          status: newTenantData.status,
+          accessibleModules: newTenantData.accessibleModules,
+          nit: (newTenantData as any).nit || null,
+        };
+        await updateTenant(selectedTenant.id, updateData);
+        // If new logo file uploaded, upload and update
+        if (logoFile) {
+          try {
+            const logoURL = await uploadFile(logoFile, `tenant-logos/${selectedTenant.id}`);
+            await updateTenant(selectedTenant.id, { logoURL });
+          } catch (e) {
+            console.error('Error uploading tenant logo', e);
+          }
         }
+        toast({ title: 'Empresa Actualizada', description: `La empresa '${newTenantData.name}' ha sido actualizada.` });
+      } else {
+        // Create flow
+        // Step 1: Create the new tenant to get an ID
+        const newTenantId = await addTenant(newTenantData);
+        toast({ title: "Empresa Creada", description: `La empresa '${newTenantData.name}' ha sido registrada.` });
+
+        // Step 2: Create the admin user for that new tenant
+        const adminUserData: Omit<User, 'id'> = {
+          name: newAdminData.name,
+          email: newAdminData.email,
+          password: newAdminData.password,
+          role: 'Admin',
+          status: 'Active',
+          tenantId: newTenantId,
+          accessibleModules: [], // Admin inherits modules from tenant, so this can be empty
+          costCenters: [],
+          photoURL: null,
+        };
+        await addUser(adminUserData);
+        // If a logo file was provided, upload it and update tenant
+        if (logoFile) {
+          try {
+            const logoURL = await uploadFile(logoFile, `tenant-logos/${newTenantId}`);
+            await updateTenant(newTenantId, { logoURL });
+          } catch (e) {
+            console.error('Error uploading tenant logo', e);
+            // non-fatal: tenant was created, admin created
+          }
+        }
+        toast({ title: "Usuario Administrador Creado", description: `El usuario ${newAdminData.email} ha sido creado para ${newTenantData.name}.` });
       }
-            toast({ title: "Usuario Administrador Creado", description: `El usuario ${newAdminData.email} ha sido creado para ${newTenantData.name}.` });
 
             // Step 3: Reset form and refresh list
             setIsFormOpen(false);
+            setSelectedTenant(null);
             setNewTenantData(initialNewTenantState);
             setNewAdminData(initialNewAdminState);
             fetchTenants();
@@ -205,6 +229,10 @@ export default function TenantManagementPage() {
                         <div className="space-y-2">
                              <Label htmlFor="tenant-name">Nombre de la Empresa</Label>
                              <Input id="tenant-name" value={newTenantData.name} onChange={(e) => setNewTenantData({...newTenantData, name: e.target.value})} />
+              <div className="mt-2">
+             <Label htmlFor="tenant-nit">NIT</Label>
+             <Input id="tenant-nit" value={(newTenantData as any).nit || ''} onChange={(e) => setNewTenantData({...newTenantData, nit: e.target.value})} />
+              </div>
                         </div>
               <div className="space-y-2 mt-2">
                 <Label htmlFor="tenant-logo">Logo de la Empresa (Opcional)</Label>
@@ -273,6 +301,14 @@ export default function TenantManagementPage() {
                         <DropdownMenuItem onClick={() => handleOpenModuleManager(tenant)}>
                             <SlidersHorizontal className="mr-2 h-4 w-4"/>
                             Gestionar Módulos
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => {
+                            setSelectedTenant(tenant);
+                            setNewTenantData({ ...newTenantData, name: tenant.name, status: tenant.status, accessibleModules: tenant.accessibleModules || [], logoURL: tenant.logoURL || null });
+                            setLogoFile(null);
+                            setIsFormOpen(true);
+                        }}>
+                            Editar Empresa
                         </DropdownMenuItem>
                         {tenant.status === 'Active' ? (
                             <DropdownMenuItem onClick={() => handleDeactivate(tenant)}>Desactivar</DropdownMenuItem>

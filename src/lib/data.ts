@@ -691,6 +691,7 @@ export async function getTenants(): Promise<Tenant[]> {
             createdAt: data.createdAt.toDate(),
             accessibleModules: data.accessibleModules || [],
             logoURL: data.logoURL || null,
+            nit: data.nit || null,
         } as Tenant;
     });
 }
@@ -708,6 +709,7 @@ export async function getTenantById(tenantId: string): Promise<Tenant | null> {
             createdAt: data.createdAt.toDate(),
             accessibleModules: data.accessibleModules || [],
             logoURL: data.logoURL || null,
+            nit: data.nit || null,
         } as Tenant;
     }
     return null;
@@ -719,6 +721,7 @@ export async function addTenant(tenant: Omit<Tenant, 'id' | 'createdAt'>): Promi
     const docRef = await addDoc(collection(db, 'tenants'), {
         ...tenant,
         logoURL: tenant.logoURL || null,
+        nit: tenant.nit || null,
         createdAt: Timestamp.now(),
     });
     return docRef.id;
